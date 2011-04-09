@@ -242,8 +242,6 @@ class ZConfig
 			break if frame_header_valid? frame_header
 		end
 
-		puts "TOTAL SKIP IS #{ts}"
-
 		if crc16off == 0
 			crc = data[3..6].unpack('N')
 			puts "crc-16-value: #{crc}"
