@@ -1,0 +1,238 @@
+#!/usr/bin/ruby
+# microcast streaminfo tool
+# Copyright(c) 2011 by Christopher Abad
+# mailto:aempirei@gmail.com
+# aim:goim?screenname=ambient+empire
+# http://www.twentygoto10.com
+# git://github.com/aempirei/microcast.git
+
+require 'rubygems'
+require 'getoptlong'
+require 'socket'
+
+PROGRAM = 'streaminfo'
+VERSION = '1.0'
+ARG0 = File.basename(__FILE__)
+
+DFLPORT = 80
+DFLPATH = '/'
+
+def parse_url(url)
+
+	if url =~ /^(https?):\/\/([-\w.]+)(?::(\d+))?(.+)?/
+
+		protocol = $1
+		host = $2
+		port = $3.nil? ? DFLPORT : $3
+		path = $4.nil? ? DFLPATH : $4
+
+		return [ protocol, host, port, path ]
+	end
+
+	return nil
+end
+
+class ZConfig
+
+	attr_accessor :protocol
+	attr_accessor :host
+	attr_accessor :port
+	attr_accessor :path
+	attr_accessor :url
+	attr_accessor :socket
+	attr_accessor :options
+	attr_accessor :metaint
+
+	def initialize
+		@options = []
+	end
+
+	def startup
+
+		raise 'no url specified' if @url.nil?
+
+		@protocol, @host, @port, @path = parse_url @url
+
+		raise 'url invalid' if @protocol.nil?
+		
+		# connect socket
+
+		@socket.close unless @socket.nil?
+
+		@socket = TCPSocket.open(@host, @port)
+
+		# register at_exit
+
+		Kernel.at_exit do
+			@socket.close unless ( @socket.nil? or @socket.closed? )
+		end
+
+		# register SIGINT handler
+
+		Kernel.trap('INT') do |signo|
+			Kernel.trap(signo, 'SIG_IGN')
+			puts "captured interrupt, exiting"
+			exit
+		end
+
+		return true
+	end
+
+	def resp_ok?(line)
+
+		raise 'no response received' if line.nil?
+
+		line.chomp!
+
+		return true if line =~ /^HTTP\/1\.[01]\s+200\s+OK\s*$/
+
+		return false
+	end
+
+	def get_options
+
+		options = []
+
+		while true
+			line = @socket.readline
+			raise 'getting options failed' if line.nil?
+			line.chomp!
+			break if line == ''
+			options << line
+		end
+
+		return options.inject({}) do |a,option|
+			a[$1] = $2 if option =~ /^([^:]+):\s*(.*)/
+			a
+		end
+	end
+
+	def request
+
+		request_data = sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nIcy-MetaData:1\r\n\r\n", @path, @host)
+
+		@socket.write request_data
+
+		if resp_ok?(@socket.readline)
+			
+			@options = get_options
+
+			raise 'metaint missing from options' unless @options.has_key? 'icy-metaint'
+
+			@metaint = @options['icy-metaint'].to_i
+
+			raise 'metaint is not a positive integer' if @metaint < 1
+
+			return true
+		end
+
+		return false
+	end
+
+	def next
+
+		data = ''
+
+		while data.length < @metaint
+			delta = @socket.recv(@metaint - data.length)
+			raise 'data read failed' if delta.nil?
+			data += delta
+		end
+
+		data = ''
+
+		sz = @socket.recv(1)
+
+		raise 'meta header read failed' if sz.nil?
+		
+		sz = sz.ord * 16
+
+		meta = @socket.recv(sz)
+
+		raise 'meta read failed' if meta.nil?
+
+		meta = meta.sub(/\0+$/, '').scan(/(\w+)=('[^']*'|"[^"]*");/).inject({}) do |acc,kv|
+			kv[1] = $2 if kv[1] =~ /(['"])(.*)\1/
+			acc[kv[0]] = kv[1]
+			acc
+		end
+
+		return [data,sz,meta]
+	end
+end
+
+$config = ZConfig.new
+
+OPTIONS = [
+	[ [ '--url'    , '-u', GetoptLong::REQUIRED_ARGUMENT ], nil, 'url'            ],
+	[ [ '--help'   , '-h', GetoptLong::NO_ARGUMENT       ], nil, 'help'           ],
+	[ [ '--version', '-V', GetoptLong::NO_ARGUMENT       ], nil, 'version'        ]
+]
+
+def usage
+
+	width = 20
+
+	print "\n"
+	
+	version()
+
+	print "\nusage: " + ARG0 + " [options]\n\n"
+
+	OPTIONS.each do |option,arg,desc|
+
+		( long, short, params ) = option
+		
+		str = [ long, short ].compact.join(', ') + ' '
+		str += arg.to_s.upcase unless arg.nil?
+
+		printf("\t%-*s%s", width, str, desc)
+		printf(' (default: %s)', $config.send(arg)) unless arg.nil?
+		print "\n"
+	end
+
+	print "\n"
+
+end
+
+def version
+	puts PROGRAM + ' ' + VERSION
+end
+
+opts = GetoptLong.new(*OPTIONS.map { |x| x.first })
+
+opts.each do |opt,arg|
+	case opt
+		when '--url'
+			$config.url = arg
+		when '--help'
+			usage()
+			exit
+		when '--version'
+			version()
+			exit
+	end
+end
+
+unless $config.startup
+	puts "initialization failed"
+	exit false
+end
+
+unless $config.request
+	puts "stream request failed"
+	exit false
+end
+
+def print_hash(hash)
+	hash.each do |k,v|
+		printf("%s: %s\n", k, v);
+	end
+end
+
+print_hash $config.options
+
+until (event = $config.next).nil?
+	data,sz,meta = event
+	print_hash meta
+end

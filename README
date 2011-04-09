@@ -1,0 +1,10 @@
+microcast server 1.0 (microcast-1.0)
+
+Copyright(c) 2011 by Christopher Abad
+20 GOTO 10 | twentygoto10.com
+
+git://github.com/aempirei/microcast.git
+
+You will need Ruby 1.9, as microcast
+and its related tools are written in
+ruby. Sorry.
