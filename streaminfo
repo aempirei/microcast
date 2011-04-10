@@ -58,6 +58,7 @@ class ZConfig
 	COPYRIGHT = [ 'no', 'yes' ]
 	ORIGINAL = [ 'no', 'yes' ]
 	EMPHASIS =  [ 'none', '50/15ms', 'reserved', 'CCIT J.17' ]
+	FRAMESIZE = [ 'bad', 1152, 1152, 384 ]
 
 	FRAME_HEADER_SZ = 4
 	FRAME_CRC16_SZ = 2
@@ -84,9 +85,9 @@ class ZConfig
 		return 'bad' unless br.is_a?(Numeric) and sr.is_a?(Numeric) and padding.is_a?(Numeric)
 
 		if [1,2].include?(l)
-			return (144 * br * 1000 / sr) + padding
+			return ((144 * br * 1000 / sr) + padding).floor
 		elsif [3].include?(l)
-			return ((12 * br * 1000 / sr) + padding) * 4
+			return (((12 * br * 1000 / sr) + padding) * 4).floor
 		else
 			return 'bad'
 		end
@@ -255,20 +256,20 @@ class ZConfig
 			bitrate = get_bitrate(version,layer,br)
 
 			frame_header = {
-				'version'     => VERSION[version],
-				'layer'       => LAYER[layer],
-				'crc-16'      => CRC16[crc16off],
-				'bit-rate'    => bitrate,
-				'sample-rate' => SAMPLERATE[version][sr],
-				'padding'     => PADDING[padding],
-				'privacy'     => PRIVACY[privacy],
-				'mode'        => MODE[mode],
-				'copyright'   => COPYRIGHT[copyright],
-				'original'    => ORIGINAL[original],
-				'emphasis'    => EMPHASIS[emphasis],
-				'frame-size'  => get_frame_size(layer, bitrate, SAMPLERATE[version][sr], padding), # FIXME: deal with the padding here
-				'skip-size'   => skipped_data.size,
-				'data'        => nil
+				'version'      => VERSION[version],
+				'layer'        => LAYER[layer],
+				'crc-16'       => CRC16[crc16off],
+				'bit-rate'     => bitrate,
+				'sample-rate'  => SAMPLERATE[version][sr],
+				'padding'      => PADDING[padding],
+				'privacy'      => PRIVACY[privacy],
+				'mode'         => MODE[mode],
+				'copyright'    => COPYRIGHT[copyright],
+				'original'     => ORIGINAL[original],
+				'emphasis'     => EMPHASIS[emphasis],
+				'frame-size'   => FRAMESIZE[layer],
+				'frame-length' => get_frame_size(layer, bitrate, SAMPLERATE[version][sr], padding), # FIXME: deal with the padding here
+				'skip-size'    => skipped_data.size,
 			}
 
 			# print_hash frame_header + "\n"
@@ -290,6 +291,16 @@ class ZConfig
 			crc = data.slice!(0,FRAME_CRC16_SZ).unpack('n')
 			frame_header['crc-16-value'] = crc
 		end
+
+		# make sure theres enough stream data to grab the frame data
+
+		return postponed if data.length < frame_header['frame-length']
+
+		# save the data, which may be slightly wrong, and then truncate most of the data except a reasonable buffer before the expected next header
+
+		frame_header['data'] = data.slice(0,frame_header['frame-length'])
+
+		data.slice!(0,frame_header['frame-length'] - 2 * FRAME_HEADER_SZ)
 
 		return [ frame_header, data ]
 	end
@@ -424,8 +435,8 @@ $config.each_meta do |meta|
 
 	$config.frames.each do |f|
 
-		line = sprintf("%s %s %3dKb/s %d5hz %s %s previous %d expected next %d crc-16 %s padding %s",
-			f['version'], f['layer'], f['bit-rate'], f['sample-rate'], f['mode'], f['emphasis'], f['frame-size'], f['skip-size'], f['crc-16'], f['padding'])
+		line = sprintf("%s %s %3dKb/s %5dhz %s %s samples %d skipped %d data.size %d expected size %d crc-16 %s padding %s",
+			f['version'], f['layer'], f['bit-rate'], f['sample-rate'], f['mode'], f['emphasis'], f['frame-size'], f['skip-size'], f['data'].size, f['frame-length'], f['crc-16'], f['padding'])
 
 		if line == pline
 			tally += 1
