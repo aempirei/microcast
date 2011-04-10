@@ -34,7 +34,7 @@ def parse_url(url)
 end
 
 def is_true?(arg)
-	return ( [ 'true', '1', 'yes', 't', 'y' ].includes? arg.downcase )
+	return ( [ 'true', '1', 'yes', 't', 'y' ].include? arg.to_s.downcase )
 end
 
 module Enumerable
@@ -58,6 +58,12 @@ class BasicSocket
 		end
 
 		return data
+	end
+end
+
+class Hash
+	def log_all
+		each { |k,v| log(k,v) }
 	end
 end
 
@@ -92,7 +98,7 @@ end
 class ZConfig
 
 	DFLMETA = true
-	DFLMETAINT = 16384
+	DFLMETAINT = 32768
 
 	VERSION = [ 'MPEG 2.5', 'reserved', 'MPEG 2', 'MPEG 1' ]
 	LAYER = [ 'reserved', 'Layer III', 'Layer II', 'Layer I' ]
@@ -134,6 +140,7 @@ class ZConfig
 	attr_accessor :frames
 	attr_accessor :datastream
 	attr_accessor :meta
+	attr_accessor :metadata
 	attr_accessor :metaint
 
 	def get_bitrate(v,l,br)
@@ -492,12 +499,6 @@ end
 unless $config.request
 	puts "stream request failed"
 	exit false
-end
-
-class Hash
-	def log_all
-		each { |k,v| log(k,v) }
-	end
 end
 
 $config.options.log_all
