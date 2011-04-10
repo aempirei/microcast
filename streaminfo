@@ -45,21 +45,22 @@ class ZConfig
 		[ lambda { |v,l| [0,2].include?(v) and [1,2].include?(l) }, [ 'free',  8, 16, 24,  32,  40,  48,  56,  64,  80,  96, 112, 128, 144, 160, 'bad' ] ]
 	]
 
-	HZ = [
+	SAMPLERATE = [
 		[ 11025, 12000,  8000, 'reserved' ], # MPEG 2.5
-		nil,
+		[ 'bad', 'bad', 'bad', 'reserved' ], # reserved
 		[ 22050, 24000, 16000, 'reserved' ], # MPEG 2
 		[ 44100, 48000, 32000, 'reserved' ], # MPEG 1
 	]
 
-	PAD = [ 'no padding', 'padding' ]
-	PRIV = [ 'no', 'yes' ]
+	PADDING = [ 'no', 'yes' ]
+	PRIVACY = [ 'no', 'yes' ]
 	MODE = [ 'stereo', 'joint stereo', 'dual mono', 'single mono' ]
 	COPYRIGHT = [ 'no', 'yes' ]
 	ORIGINAL = [ 'no', 'yes' ]
 	EMPHASIS =  [ 'none', '50/15ms', 'reserved', 'CCIT J.17' ]
 
-	FRAME_HDR_SZ = 4
+	FRAME_HEADER_SZ = 4
+	FRAME_CRC16_SZ = 2
 
 	attr_accessor :protocol
 	attr_accessor :host
@@ -68,15 +69,33 @@ class ZConfig
 	attr_accessor :url
 	attr_accessor :socket
 	attr_accessor :options
+	attr_accessor :frames
+	attr_accessor :datastream
 
-	def get_bitrate(v,l)
-		BITRATE.each { |f,a| return a if f.call(v,l) }
+	def get_bitrate(v,l,br)
+
+		BITRATE.each { |f,brs| return brs[br] if f.call(v,l) }
+
 		return nil
+	end
+
+	def get_frame_size(l,br,sr,padding)
+
+		return 'bad' unless br.is_a?(Numeric) and sr.is_a?(Numeric) and padding.is_a?(Numeric)
+
+		if [1,2].include?(l)
+			return (144 * br * 1000 / sr) + padding
+		elsif [3].include?(l)
+			return ((12 * br * 1000 / sr) + padding) * 4
+		else
+			return 'bad'
+		end
 	end
 
 	def initialize
 		@options = []
-		@predata = ''
+		@frames = []
+		@datastream = ''
 	end
 
 	def startup
@@ -175,8 +194,8 @@ class ZConfig
 		skip = 0
 
 		until (data[skip + 0].ord == 0xff) and (data[skip + 1].ord >= 0xf0) and (data[skip + 1].ord <= 0xff)
-			return nil if skip + FRAME_HDR_SZ == data.length
 			skip += 1
+			return nil if skip + FRAME_HEADER_SZ == data.length
 		end
 
 		return skip
@@ -189,90 +208,129 @@ class ZConfig
 	end
 
 	def frame_header_valid?(frame_header)
-		return frame_header.values.grep(/^(reserved|bad)$/).empty?
+		return false if ( not frame_header.values.grep(/^(reserved|bad)$/).empty? )
+		return false if frame_header['layer'] != 'Layer III'
+		return true
 	end
 
-	def get_blocks(data)
-		
-		blocks = []
+	def has_frame?(data)
+		return ( not get_frame_header_offset(data).nil? )
+	end
 
-		return [ [], data ] if data.size < FRAME_HDR_SZ
+	def get_frames(data)
 
-		puts get_hexdump(data[0,384])
+		frames = []
 
-		ts = 0
+		while has_frame?(data)
+			frame,data = get_frame(data)
+			break if frame.nil?
+			frames << frame
+		end
+
+		return [ frames, data ]
+	end
+
+	def get_frame(data)
+
+		postponed = [ nil, data ]
+
+		return postponed if data.size < FRAME_HEADER_SZ
+
+		# puts get_hexdump(data[0,384])
+
+		skipped_data = ''
 
 		while true
 
 			skip = get_frame_header_offset(data)
 
-			ts += skip
+			return postponed if skip.nil?
 
-			return [ blocks, data[-(FRAME_HDR_SZ-1),FRAME_HDR_SZ-1] ] if skip.nil?
+			skipped_data += data.slice!(0,skip)
 
-			data = data[skip,data.length-skip]
+			frame_header_bytes = data.slice(0,FRAME_HEADER_SZ)
 
-			sync,version,layer,crc16off,br,hz,pad,priv,mode,me,copyright,orig,emphasis = get_frame_header_fields data[0..3]
+			sync,version,layer,crc16off,br,sr,padding,privacy,mode,me,copyright,original,emphasis = get_frame_header_fields(frame_header_bytes)
 
-			brs = get_bitrate(version,layer)
-			hzs = HZ[version]
+			bitrate = get_bitrate(version,layer,br)
 
 			frame_header = {
-				'version'   => VERSION[version],
-				'layer'     => LAYER[layer],
-				'crc-16'    => CRC16[crc16off],
-				'bitrate'   => brs.nil? ? nil : brs[br],
-				'frequency' => hzs.nil? ? nil : hzs[hz],
-				'padding'   => PAD[pad],
-				'privacy'   => PRIV[priv],
-				'mode'      => MODE[mode],
-				'copyright' => COPYRIGHT[copyright],
-				'original'  => ORIGINAL[orig],
-				'emphasis'  => EMPHASIS[emphasis]
+				'version'     => VERSION[version],
+				'layer'       => LAYER[layer],
+				'crc-16'      => CRC16[crc16off],
+				'bit-rate'    => bitrate,
+				'sample-rate' => SAMPLERATE[version][sr],
+				'padding'     => PADDING[padding],
+				'privacy'     => PRIVACY[privacy],
+				'mode'        => MODE[mode],
+				'copyright'   => COPYRIGHT[copyright],
+				'original'    => ORIGINAL[original],
+				'emphasis'    => EMPHASIS[emphasis],
+				'frame-size'  => get_frame_size(layer, bitrate, SAMPLERATE[version][sr], padding), # FIXME: deal with the padding here
+				'skip-size'   => skipped_data.size,
+				'data'        => nil
 			}
 
-			data.slice! 1
+			# print_hash frame_header + "\n"
 
-			print_hash frame_header
-
-			puts ''
-
-			ts += 1
-
-			break if frame_header_valid? frame_header
+			if frame_header_valid? frame_header
+				# remove the frame header and now data just contains the tail data which is already saved in frame_header_bytes
+				data.slice!(0,FRAME_HEADER_SZ)
+				break
+			else
+				# add one byte of the invalid frame header to the pre data so that it gets skipped next iteration
+				skipped_data += data.slice!(0)
+			end
 		end
 
 		if crc16off == 0
-			crc = data[3..6].unpack('N')
-			puts "crc-16-value: #{crc}"
-		else
-			crc = nil
+			# if the crc16 is not off then pull it from the tail data
+			# put the data back and wait until later if theres not enough data
+			return postponed if data.size < 2
+			crc = data.slice!(0,FRAME_CRC16_SZ).unpack('n')
+			frame_header['crc-16-value'] = crc
 		end
 
-		return [ blocks, '' ]
+		return [ frame_header, data ]
 	end
 
-	def next
+	def read_meta
+		sz = @socket.recv(1)
+		raise 'meta header read failed' if sz.nil?
+		sz = sz.ord * 16
+		return recv_bytes(sz)
+	end
 
+	def recv_bytes(n)
 		data = ''
 
-		while data.length < @metaint
-			delta = @socket.recv(@metaint - data.length)
+		while data.size < n
+			delta = @socket.recv(n - data.size)
 			raise 'data read failed' if delta.nil?
 			data += delta
 		end
 
-		sz = @socket.recv(1)
+		return data
+	end
 
-		raise 'meta header read failed' if sz.nil?
-		
-		sz = sz.ord * 16
+	def each_meta(&block)
+		loop do
+			meta = next_meta()
+			break if meta.nil?
+			block.call meta
+		end
+	end
 
-		meta = @socket.recv(sz)
+	def next_meta
+		# get a data chunk based on the meta-int value
 
-		raise 'meta read failed' if meta.nil?
+		@datastream += recv_bytes(@metaint)
 
-		data,@predata = get_blocks(@predata + data)
+		meta = read_meta()
+
+		frames, @datastream = get_frames(@datastream)
+
+		@frames += frames
 
 		meta = meta.sub(/\0+$/, '').scan(/(\w+)=('[^']*'|"[^"]*");/).inject({}) do |acc,kv|
 			kv[1] = $2 if kv[1] =~ /(['"])(.*)\1/
@@ -280,7 +338,7 @@ class ZConfig
 			acc
 		end
 
-		return [data,sz,meta]
+		return meta
 	end
 end
 
@@ -355,8 +413,10 @@ end
 
 print_hash $config.options
 
-until (event = $config.next).nil?
-	data,sz,meta = event
-	p data
+$config.each_meta do |meta|
 	print_hash meta
+	printf("frame-count: %d\n",  $config.frames.size)
+	$config.frames.each do |f|
+		printf("%s %s %dKb/s %dHz %s %s previous %d expected next %d\n", f['version'], f['layer'], f['bit-rate'], f['sample-rate'], f['mode'], f['emphasis'], f['frame-size'], f['skip-size'])
+	end
 end
