@@ -1,4 +1,4 @@
-#!/usr/bin/ruby
+#!/usr/bin/ruby -KU
 # microcast streaminfo tool
 # Copyright(c) 2011 by Christopher Abad
 # mailto:aempirei@gmail.com
@@ -32,6 +32,56 @@ def parse_url(url)
 	return nil
 end
 
+module Enumerable
+	def each_group(n,&block)
+		left = self.dup
+		while ( not left.empty? )
+			block.call(left.take n)
+			left = left.drop n
+		end
+	end
+end
+
+class BasicSocket
+	def recv_bytes(n)
+		data = ''
+
+		while data.size < n
+			delta = recv(n - data.size)
+			return nil if delta.nil?
+			data += delta
+		end
+
+		return data
+	end
+end
+
+class String
+
+	def logdump(name, width=32)
+		printf("< %d %s:\n", Time.now.to_i, name)
+		puts hexdump(width)
+		puts '>'
+	end
+
+	def hexdump(width=32)
+		
+		lines = []
+		
+		split(//).map { |b| [ sprintf('%02x', b.ord), (b =~ /^[[:print:]]$/) ? b : '.' ] }.each_group(width) do |xs|
+			hex = xs.map { |a,b| a }.join(' ')
+			str = xs.map { |a,b| b }.join()
+			lines << sprintf(' %-*s | %-*s |', width * 3, hex, width, str)
+		end
+
+		return lines.join("\n")
+	end
+end
+
+def log(key,value)
+	printf("= %d %s: %s\n", Time.now.to_i, key, value)
+end
+
 class ZConfig
 
 	VERSION = [ 'MPEG 2.5', 'reserved', 'MPEG 2', 'MPEG 1' ]
@@ -60,6 +110,7 @@ class ZConfig
 	EMPHASIS =  [ 'none', '50/15ms', 'reserved', 'CCIT J.17' ]
 	FRAMESIZE = [ 'bad', 1152, 1152, 384 ]
 
+	OPTION_BITS = [ [0,11],[11,2],[13,2],[15,1],[16,4],[20,2],[22,1],[23,1],[24,2],[26,2],[28,1],[29,1],[30,2] ]
 	FRAME_HEADER_SZ = 4
 	FRAME_CRC16_SZ = 2
 
@@ -111,6 +162,8 @@ class ZConfig
 
 		@socket.close unless @socket.nil?
 
+		[ :protocol, :host, :port, :path ].each { |s| log(s, send(s)) }
+
 		@socket = TCPSocket.open(@host, @port)
 
 		# register at_exit
@@ -136,7 +189,9 @@ class ZConfig
 
 		line.chomp!
 
-		return true if line =~ /^HTTP\/1\.[01]\s+200\s+OK\s*$/
+		line.logdump(:response)
+
+		return true if line =~ /^(HTTP\/1\.[01]|ICY)\s+200\s+OK\s*$/
 
 		return false
 	end
@@ -163,6 +218,8 @@ class ZConfig
 
 		request_data = sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nIcy-MetaData:1\r\n\r\n", @path, @host)
 
+		request_data.logdump(:request)
+
 		@socket.write request_data
 
 		if resp_ok?(@socket.readline)
@@ -185,7 +242,7 @@ class ZConfig
 
 		frame_header = sprintf("%b", data32.unpack('N').first)
 
-		return [ [0,11],[11,2],[13,2],[15,1],[16,4],[20,2],[22,1],[23,1],[24,2],[26,2],[28,1],[29,1],[30,2] ].map do |range|
+		return OPTION_BITS.map do |range|
 			Integer ('0b' + frame_header[*range])
 		end
 	end
@@ -200,12 +257,6 @@ class ZConfig
 		end
 
 		return skip
-	end
-
-	def get_hexdump(data)
-		lines = []
-		data.split(//).map { |b| sprintf('%02x', b.ord) }.each_slice(32) { |xs| lines << xs.join(' ') }
-		return lines.join("\n")
 	end
 
 	def frame_header_valid?(frame_header)
@@ -224,6 +275,7 @@ class ZConfig
 
 		while has_frame?(data)
 			frame,data = get_frame(data)
+			# puts '→ ' + data[0,32].hexdump
 			break if frame.nil?
 			frames << frame
 		end
@@ -231,13 +283,34 @@ class ZConfig
 		return [ frames, data ]
 	end
 
+	def get_frame_header(frame_header_bytes)
+
+		sync,version,layer,crc16off,br,sr,padding,privacy,mode,me,copyright,original,emphasis = get_frame_header_fields(frame_header_bytes)
+
+		bitrate = get_bitrate(version,layer,br)
+
+		return {
+			'version'      => VERSION[version],
+			'layer'        => LAYER[layer],
+			'crc-16'       => CRC16[crc16off],
+			'bit-rate'     => bitrate,															# bit rate in Kb/s
+			'sample-rate'  => SAMPLERATE[version][sr],											# sample rate in hz
+			'padding'      => PADDING[padding],
+			'privacy'      => PRIVACY[privacy],
+			'mode'         => MODE[mode],
+			'copyright'    => COPYRIGHT[copyright],
+			'original'     => ORIGINAL[original],
+			'emphasis'     => EMPHASIS[emphasis],
+			'frame-size'   => FRAMESIZE[layer],													# frame size in samples
+			'frame-length' => get_frame_size(layer, bitrate, SAMPLERATE[version][sr], padding), # includes header and possible crc
+		}
+	end
+
 	def get_frame(data)
 
 		postponed = [ nil, data ]
 
 		return postponed if data.size < FRAME_HEADER_SZ
-
-		# puts get_hexdump(data[0,384])
 
 		skipped_data = ''
 
@@ -249,30 +322,9 @@ class ZConfig
 
 			skipped_data += data.slice!(0,skip)
 
-			frame_header_bytes = data.slice(0,FRAME_HEADER_SZ)
+			frame_header_bytes = data[0,FRAME_HEADER_SZ]
 
-			sync,version,layer,crc16off,br,sr,padding,privacy,mode,me,copyright,original,emphasis = get_frame_header_fields(frame_header_bytes)
-
-			bitrate = get_bitrate(version,layer,br)
-
-			frame_header = {
-				'version'      => VERSION[version],
-				'layer'        => LAYER[layer],
-				'crc-16'       => CRC16[crc16off],
-				'bit-rate'     => bitrate,
-				'sample-rate'  => SAMPLERATE[version][sr],
-				'padding'      => PADDING[padding],
-				'privacy'      => PRIVACY[privacy],
-				'mode'         => MODE[mode],
-				'copyright'    => COPYRIGHT[copyright],
-				'original'     => ORIGINAL[original],
-				'emphasis'     => EMPHASIS[emphasis],
-				'frame-size'   => FRAMESIZE[layer],
-				'frame-length' => get_frame_size(layer, bitrate, SAMPLERATE[version][sr], padding), # FIXME: deal with the padding here
-				'skip-size'    => skipped_data.size,
-			}
-
-			# print_hash frame_header + "\n"
+			frame_header = get_frame_header(frame_header_bytes)
 
 			if frame_header_valid? frame_header
 				# remove the frame header and now data just contains the tail data which is already saved in frame_header_bytes
@@ -283,6 +335,14 @@ class ZConfig
 				skipped_data += data.slice!(0)
 			end
 		end
+
+		frame_header['skip-length'] = skipped_data.length
+
+		if skipped_data.length > 0
+			skipped_data.logdump(:skipped_data)
+		end
+
+		crc = nil
 
 		if frame_header['crc-16'] == 'yes'
 			# if the crc16 is not off then pull it from the tail data
@@ -296,36 +356,24 @@ class ZConfig
 
 		return postponed if data.length < frame_header['frame-length']
 
-		# save the data, which may be slightly wrong, and then truncate most of the data except a reasonable buffer before the expected next header
+		# save the frame samples data minus the header and possible crc
 
-		frame_header['data'] = data.slice(0,frame_header['frame-length'])
-
-		data.slice!(0,frame_header['frame-length'] - 2 * FRAME_HEADER_SZ)
+		frame_header['data'] = data.slice!(0,frame_header['frame-length'] - FRAME_HEADER_SZ - (crc.nil? ? 0 : FRAME_CRC16_SZ))
 
 		return [ frame_header, data ]
 	end
 
 	def read_meta
-		sz = @socket.recv(1)
+		sz = @socket.recv_bytes(1)
 		raise 'meta header read failed' if sz.nil?
 		sz = sz.ord * 16
-		return recv_bytes(sz)
-	end
-
-	def recv_bytes(n)
-		data = ''
-
-		while data.size < n
-			delta = @socket.recv(n - data.size)
-			raise 'data read failed' if delta.nil?
-			data += delta
-		end
-
-		return data
+		meta = @socket.recv_bytes(sz)
+		raise 'could not read meta data' if meta.nil?
+		return meta
 	end
 
 	def each_meta(&block)
-		loop do
+		while true
 			meta = next_meta()
 			break if meta.nil?
 			block.call meta
@@ -333,13 +381,18 @@ class ZConfig
 	end
 
 	def next_meta
+
 		# get a data chunk based on the meta-int value
 
-		@datastream += recv_bytes(@metaint)
+		delta = @socket.recv_bytes(@metaint)
+		raise 'could not read data stream' if delta.nil?
+		@datastream += delta
+
+		delta[0,128].logdump(:delta)
 
 		meta = read_meta()
 
-		frames, @datastream = get_frames(@datastream)
+		frames, @datastream = get_frames @datastream
 
 		@frames += frames
 
@@ -416,27 +469,27 @@ unless $config.request
 	exit false
 end
 
-def print_hash(hash)
-	hash.each do |k,v|
-		printf("%s: %s\n", k, v);
+class Hash
+	def log_all
+		each { |k,v| log(k,v) }
 	end
 end
 
-print_hash $config.options
+$config.options.log_all
 
 $config.each_meta do |meta|
 
-	print_hash meta
+	meta.log_all
 
-	printf("frame-count: %d\n",  $config.frames.size)
+	log('frame-count', $config.frames.size)
 
 	tally = 0
 	pline = nil
 
 	$config.frames.each do |f|
 
-		line = sprintf("%s %s %3dKb/s %5dhz %s %s samples %d skipped %d data.size %d expected size %d crc-16 %s padding %s",
-			f['version'], f['layer'], f['bit-rate'], f['sample-rate'], f['mode'], f['emphasis'], f['frame-size'], f['skip-size'], f['data'].size, f['frame-length'], f['crc-16'], f['padding'])
+		line = sprintf("%s %s %3dKb/s %5dhz %s %s samples %d skipped %d data.size %d expected size %d (-4) = %d crc-16 %s padding %s",
+			f['version'], f['layer'], f['bit-rate'], f['sample-rate'], f['mode'], f['emphasis'], f['frame-size'], f['skip-length'], f['data'].size, f['frame-length'], f['frame-length'] - 4, f['crc-16'], f['padding'])
 
 		if line == pline
 			tally += 1
@@ -446,6 +499,12 @@ $config.each_meta do |meta|
 			pline = line
 		end
 	end
+
+	$config.frames.last.log_all
+
+	$config.frames.last['data'].logdump(:last_data)
+
+	$config.datastream.logdump(:datastream)
 
 	$config.frames.clear
 end
