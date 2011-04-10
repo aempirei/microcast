@@ -240,7 +240,7 @@ class ZConfig
 
 		skipped_data = ''
 
-		while true
+		while true do
 
 			skip = get_frame_header_offset(data)
 
@@ -283,7 +283,7 @@ class ZConfig
 			end
 		end
 
-		if crc16off == 0
+		if frame_header['crc-16'] == 'yes'
 			# if the crc16 is not off then pull it from the tail data
 			# put the data back and wait until later if theres not enough data
 			return postponed if data.size < 2
@@ -414,9 +414,27 @@ end
 print_hash $config.options
 
 $config.each_meta do |meta|
+
 	print_hash meta
+
 	printf("frame-count: %d\n",  $config.frames.size)
+
+	tally = 0
+	pline = nil
+
 	$config.frames.each do |f|
-		printf("%s %s %dKb/s %dHz %s %s previous %d expected next %d\n", f['version'], f['layer'], f['bit-rate'], f['sample-rate'], f['mode'], f['emphasis'], f['frame-size'], f['skip-size'])
+
+		line = sprintf("%s %s %3dKb/s %d5hz %s %s previous %d expected next %d crc-16 %s padding %s",
+			f['version'], f['layer'], f['bit-rate'], f['sample-rate'], f['mode'], f['emphasis'], f['frame-size'], f['skip-size'], f['crc-16'], f['padding'])
+
+		if line == pline
+			tally += 1
+		else
+			printf("(%03d) %s\n", tally, pline) unless pline.nil?
+			tally = 1
+			pline = line
+		end
 	end
+
+	$config.frames.clear
 end
