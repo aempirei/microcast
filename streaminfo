@@ -16,6 +16,7 @@ ARG0 = File.basename(__FILE__)
 
 DFLPORT = 80
 DFLPATH = '/'
+LOGGING = false
 
 def parse_url(url)
 
@@ -30,6 +31,10 @@ def parse_url(url)
 	end
 
 	return nil
+end
+
+def is_true?(arg)
+	return ( [ 'true', '1', 'yes', 't', 'y' ].includes? arg.downcase )
 end
 
 module Enumerable
@@ -47,7 +52,7 @@ class BasicSocket
 		data = ''
 
 		while data.size < n
-			delta = recv(n - data.size)
+			delta = read(n - data.size)
 			return nil if delta.nil?
 			data += delta
 		end
@@ -59,9 +64,11 @@ end
 class String
 
 	def logdump(name, width=32)
-		printf("< %d %s:\n", Time.now.to_i, name)
-		puts hexdump(width)
-		puts '>'
+		if LOGGING
+			printf("< %d %s:\n", Time.now.to_i, name)
+			puts hexdump(width)
+			puts '>'
+		end
 	end
 
 	def hexdump(width=32)
@@ -83,6 +90,9 @@ def log(key,value)
 end
 
 class ZConfig
+
+	DFLMETA = true
+	DFLMETAINT = 16384
 
 	VERSION = [ 'MPEG 2.5', 'reserved', 'MPEG 2', 'MPEG 1' ]
 	LAYER = [ 'reserved', 'Layer III', 'Layer II', 'Layer I' ]
@@ -123,6 +133,8 @@ class ZConfig
 	attr_accessor :options
 	attr_accessor :frames
 	attr_accessor :datastream
+	attr_accessor :meta
+	attr_accessor :metaint
 
 	def get_bitrate(v,l,br)
 
@@ -148,6 +160,8 @@ class ZConfig
 		@options = []
 		@frames = []
 		@datastream = ''
+		@meta = DFLMETA
+		@metaint = DFLMETAINT
 	end
 
 	def startup
@@ -216,7 +230,11 @@ class ZConfig
 
 	def request
 
-		request_data = sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nIcy-MetaData:1\r\n\r\n", @path, @host)
+		request_data = if @meta
+			sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nIcy-MetaData:1\r\n\r\n", @path, @host)
+		else
+			sprintf("GET %s HTTP/1.1\r\nHost: %s\r\n\r\n", @path, @host)
+		end
 
 		request_data.logdump(:request)
 
@@ -226,9 +244,11 @@ class ZConfig
 			
 			@options = get_options
 
-			raise 'metaint missing from options' unless @options.has_key? 'icy-metaint'
+			if @meta
 
-			@metaint = @options['icy-metaint'].to_i
+				raise 'metaint missing from options' unless @options.has_key? 'icy-metaint'
+				@metaint = @options['icy-metaint'].to_i
+			end
 
 			raise 'metaint is not a positive integer' if @metaint < 1
 
@@ -372,15 +392,13 @@ class ZConfig
 		return meta
 	end
 
-	def each_meta(&block)
-		while true
-			meta = next_meta()
-			break if meta.nil?
-			block.call meta
+	def each_stream_block(&block)
+		while next_stream_block()
+			block.call()
 		end
 	end
 
-	def next_meta
+	def next_stream_block
 
 		# get a data chunk based on the meta-int value
 
@@ -390,28 +408,33 @@ class ZConfig
 
 		delta[0,128].logdump(:delta)
 
-		meta = read_meta()
+		if @meta
+			meta = read_meta()
+
+			@metalength = meta.length
+
+			@metadata = meta.sub(/\0+$/, '').scan(/(\w+)=('[^']*'|"[^"]*");/).inject({}) do |acc,kv|
+				kv[1] = $2 if kv[1] =~ /(['"])(.*)\1/
+				acc[kv[0]] = kv[1]
+				acc
+			end
+		end
 
 		frames, @datastream = get_frames @datastream
 
 		@frames += frames
 
-		meta = meta.sub(/\0+$/, '').scan(/(\w+)=('[^']*'|"[^"]*");/).inject({}) do |acc,kv|
-			kv[1] = $2 if kv[1] =~ /(['"])(.*)\1/
-			acc[kv[0]] = kv[1]
-			acc
-		end
-
-		return meta
+		return true
 	end
 end
 
 $config = ZConfig.new
 
 OPTIONS = [
-	[ [ '--url'    , '-u', GetoptLong::REQUIRED_ARGUMENT ], nil, 'url'            ],
-	[ [ '--help'   , '-h', GetoptLong::NO_ARGUMENT       ], nil, 'help'           ],
-	[ [ '--version', '-V', GetoptLong::NO_ARGUMENT       ], nil, 'version'        ]
+	[ [ '--url'    , '-u', GetoptLong::REQUIRED_ARGUMENT ], nil  , 'stream url'     ],
+	[ [ '--meta'   , '-m', GetoptLong::REQUIRED_ARGUMENT ], :meta, 'get metadata'   ],
+	[ [ '--help'   , '-h', GetoptLong::NO_ARGUMENT       ], nil  , 'help'           ],
+	[ [ '--version', '-V', GetoptLong::NO_ARGUMENT       ], nil  , 'version'        ]
 ]
 
 def usage
@@ -450,6 +473,8 @@ opts.each do |opt,arg|
 	case opt
 		when '--url'
 			$config.url = arg
+		when '--meta'
+			$config.meta = is_true?(arg)
 		when '--help'
 			usage()
 			exit
@@ -477,9 +502,9 @@ end
 
 $config.options.log_all
 
-$config.each_meta do |meta|
+$config.each_stream_block do
 
-	meta.log_all
+	$config.metadata.log_all if $config.meta
 
 	log('frame-count', $config.frames.size)
 
@@ -500,7 +525,7 @@ $config.each_meta do |meta|
 		end
 	end
 
-	$config.frames.last.log_all
+	$config.frames.last.log_all if LOGGING
 
 	$config.frames.last['data'].logdump(:last_data)
 
