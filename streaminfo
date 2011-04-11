@@ -16,7 +16,7 @@ ARG0 = File.basename(__FILE__)
 
 DFLPORT = 80
 DFLPATH = '/'
-LOGGING = false
+DEBUG = false
 
 def parse_url(url)
 
@@ -51,10 +51,10 @@ class BasicSocket
 	def recv_bytes(n)
 		data = ''
 
-		while data.size < n
-			delta = read(n - data.size)
+		while data.length < n
+			delta = read(n - data.length)
 			return nil if delta.nil?
-			data += delta
+			data << delta
 		end
 
 		return data
@@ -65,12 +65,15 @@ class Hash
 	def log_all
 		each { |k,v| log(k,v) }
 	end
+	def to_string_array
+		return map { |k,v| sprintf('%s: %s', k.to_s, v.to_s) }
+	end
 end
 
 class String
 
 	def logdump(name, width=32)
-		if LOGGING
+		if DEBUG
 			printf("< %d %s:\n", Time.now.to_i, name)
 			puts hexdump(width)
 			puts '>'
@@ -142,6 +145,7 @@ class ZConfig
 	attr_accessor :meta
 	attr_accessor :metadata
 	attr_accessor :metaint
+	attr_accessor :response
 
 	def get_bitrate(v,l,br)
 
@@ -212,9 +216,9 @@ class ZConfig
 
 		line.logdump(:response)
 
-		return true if line =~ /^(HTTP\/1\.[01]|ICY)\s+200\s+OK\s*$/
+		@response = ( line =~ /^(\S+\s+\d+\s+.*?)\s*$/ ? $1 : '' )
 
-		return false
+		return ( line =~ /^(HTTP\/1\.[01]|ICY)\s+200\s+OK\s*$/ ? true : false )
 	end
 
 	def get_options
@@ -235,26 +239,40 @@ class ZConfig
 		end
 	end
 
+	def get_request_options
+
+		options = {
+			'Host' => @path
+		}
+
+		options['Icy-MetaData'] = 1 if @meta
+
+		return options
+
+	end
+
+	def get_request_string
+
+		return sprintf("GET %s HTTP/1.1\r\n", @path, @host) + get_request_options().to_string_array.join("\r\n") + "\r\n\r\n"
+	end
+
 	def request
 
-		request_data = if @meta
-			sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nIcy-MetaData:1\r\n\r\n", @path, @host)
-		else
-			sprintf("GET %s HTTP/1.1\r\nHost: %s\r\n\r\n", @path, @host)
-		end
+		request_data = get_request_string()
 
 		request_data.logdump(:request)
 
 		@socket.write request_data
 
-		if resp_ok?(@socket.readline)
+		if resp_ok? @socket.readline
 			
 			@options = get_options
 
 			if @meta
-
-				raise 'metaint missing from options' unless @options.has_key? 'icy-metaint'
+				raise 'metaint missing from http options' unless @options.has_key? 'icy-metaint'
 				@metaint = @options['icy-metaint'].to_i
+			else
+				raise 'unexpected metaint in http options' if @options.has_key? 'icy-metaint'
 			end
 
 			raise 'metaint is not a positive integer' if @metaint < 1
@@ -302,7 +320,6 @@ class ZConfig
 
 		while has_frame?(data)
 			frame,data = get_frame(data)
-			# puts '→ ' + data[0,32].hexdump
 			break if frame.nil?
 			frames << frame
 		end
@@ -335,7 +352,7 @@ class ZConfig
 
 	def get_frame(data)
 
-		postponed = [ nil, data ]
+		postponed = [ nil, data.dup ]
 
 		return postponed if data.size < FRAME_HEADER_SZ
 
@@ -347,7 +364,7 @@ class ZConfig
 
 			return postponed if skip.nil?
 
-			skipped_data += data.slice!(0,skip)
+			skipped_data << data.slice!(0,skip)
 
 			frame_header_bytes = data[0,FRAME_HEADER_SZ]
 
@@ -359,7 +376,7 @@ class ZConfig
 				break
 			else
 				# add one byte of the invalid frame header to the pre data so that it gets skipped next iteration
-				skipped_data += data.slice!(0)
+				skipped_data << data.slice!(0,1)
 			end
 		end
 
@@ -400,9 +417,7 @@ class ZConfig
 	end
 
 	def each_stream_block(&block)
-		while next_stream_block()
-			block.call()
-		end
+		block.call() while next_stream_block()
 	end
 
 	def next_stream_block
@@ -411,7 +426,7 @@ class ZConfig
 
 		delta = @socket.recv_bytes(@metaint)
 		raise 'could not read data stream' if delta.nil?
-		@datastream += delta
+		@datastream << delta
 
 		delta[0,128].logdump(:delta)
 
@@ -497,7 +512,7 @@ unless $config.startup
 end
 
 unless $config.request
-	puts "stream request failed"
+	puts "stream request failed: #{$config.response}"
 	exit false
 end
 
@@ -526,7 +541,7 @@ $config.each_stream_block do
 		end
 	end
 
-	$config.frames.last.log_all if LOGGING
+	$config.frames.last.log_all if DEBUG
 
 	$config.frames.last['data'].logdump(:last_data)
 
