@@ -1,0 +1,6 @@
+http://streamer-ntc-aa03.somafm.com:80/stream/1032
+http://streamer-ntc-aa06.somafm.com:80/stream/1032
+http://streamer-dtc-aa01.somafm.com:80/stream/1032
+http://ice.somafm.com/dronezone
+http://voxsc1.somafm.com:8090
+http://ice.somafm.com/indiepop

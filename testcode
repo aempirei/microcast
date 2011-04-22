@@ -1,0 +1,311 @@
+#!/usr/bin/ruby
+# microcast streaminfo tool
+# Copyright(c) 2011 by Christopher Abad
+# mailto:aempirei@gmail.com
+# aim:goim?screenname=ambient+empire
+# http://www.twentygoto10.com
+# git://github.com/aempirei/microcast.git
+
+require 'rubygems'
+
+f = "\xFF\xFB\x90\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x49\x6E\x66\x6F\x00\x00\x00\x0F\x00\x00\x00\x05\x00\x00\x09\xCA\x00\x33\x33\x33" +
+	"\x33\x33\x33\x33\x33\x33\x33\x33\x33\x33\x33\x33\x33\x33\x33\x33\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66" +
+	"\x66\x66\x66\x66\x66\x66\x66\x66\x99\x99\x99\x99\x99\x99\x99\x99\x99\x99\x99\x99\x99\x99\x99\x99\x99\x99\x99\x99" +
+	"\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF" +
+	"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00\x00\x39\x4C\x41\x4D\x45\x33\x2E\x39\x38\x72\x01\xAA\x00" +
+	"\x00\x00\x00\x2D\xFE\x00\x00\x14\x80\x24\x03\x06\x46\x00\x00\x80\x00\x00\x09\xCA\x20\xE3\xBB\xAF\x00\x00\x00\x00" +
+	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFB\x90" +
+	"\x04\x00\x0F\xF0\x00\x00\x69\x00\x00\x00\x08\x00\x00\x0D\x20\x00\x00\x01\x00\x00\x01\xA4\x00\x00\x00\x20\x00\x00" +
+	"\x34\x80\x00\x00\x04\x4C\x41\x4D\x45\x33\x2E\x39\x38\x2E\x34" +
+	"UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU" +
+	"UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU" +
+	"UUUUUUUUUUUUUUUUUU\x4C\x41\x4D\x45\x33\x2E\x39\x38\x2E\x34UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU" +
+	"UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU\xFF\xFB\x92\x04\x40\x8F\xF0\x00\x00\x69\x00\x00\x00\x08\x00\x00\x0D\x20\x00\x00\x01\x00\x00\x01\xA4\x00\x00\x00\x20\x00\x00\x34\x80\x00\x00\x04UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU\x4C\x41\x4D\x45\x33\x2E\x39\x38\x2E\x34UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU\xFF\xFB\x92\x04\x40\x8F\xF0\x00\x00\x69\x00\x00\x00\x08\x00\x00\x0D\x20\x00\x00\x01\x00\x00\x01\xA4\x00\x00\x00\x20\x00\x00\x34\x80\x00\x00\x04UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU\x4C\x41\x4D\x45\x33\x2E\x39\x38\x2E\x34UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU\xFF\xFB\x92\x04\x40\x8F\xF0\x00\x00\x69\x00\x00\x00\x08\x00\x00\x0D\x20\x00\x00\x01\x00\x00\x01\xA4\x00\x00\x00\x20\x00\x00\x34\x80\x00\x00\x04UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU\x4C\x41\x4D\x45\x33\x2E\x39\x38\x2E\x34UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU\xFF\xFB\x92\x04\x40\x8F\xF0\x00\x00\x69\x00\x00\x00\x08\x00\x00\x0D\x20\x00\x00\x01\x00\x00\x01\xA4\x00\x00\x00\x20\x00\x00\x34\x80\x00\x00\x04UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU"
+
+module Enumerable
+	def each_group(n,&block)
+		left = self.dup
+		while ( not left.empty? )
+			block.call(left.take n)
+			left = left.drop n
+		end
+	end
+end
+
+class Hash
+	def log_all
+		each { |k,v| log(k,v) }
+	end
+	def to_string_array
+		return map { |k,v| sprintf('%s: %s', k.to_s, v.to_s) }
+	end
+end
+
+class String
+
+	def logdump(name, width=32)
+		printf("< %d %s:\n", Time.now.to_i, name)
+		puts hexdump(width)
+		puts '>'
+	end
+
+	def hexdump(width=32)
+		
+		lines = []
+		
+		split(//).map { |b| [ sprintf('%02x', b.ord), (b =~ /^[[:print:]]$/) ? b : '.' ] }.each_group(width) do |xs|
+			hex = xs.map { |a,b| a }.join(' ')
+			str = xs.map { |a,b| b }.join()
+			lines << sprintf(' %-*s | %-*s |', width * 3, hex, width, str)
+		end
+
+		return lines.join("\n")
+	end
+end
+
+def log(key,value)
+	printf("= %d %s: %s\n", Time.now.to_i, key, value)
+end
+
+class ZConfig
+
+	DFLMETA = true
+	DFLMETAINT = 32768
+
+	VERSION = [ 'MPEG 2.5', 'reserved', 'MPEG 2', 'MPEG 1' ]
+	LAYER = [ 'reserved', 'Layer III', 'Layer II', 'Layer I' ]
+	CRC16 = [ 'yes', 'no' ]
+	BITRATE = [
+		[ lambda { |v,l| [ 3 ].include?(v) and [ 3 ].include?(l) }, [ 'free', 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 'bad' ] ],
+		[ lambda { |v,l| [ 3 ].include?(v) and [ 2 ].include?(l) }, [ 'free', 32, 48, 56,  64,  80,  96, 112, 128, 160, 192, 224, 256, 320, 384, 'bad' ] ],
+		[ lambda { |v,l| [ 3 ].include?(v) and [ 1 ].include?(l) }, [ 'free', 32, 40, 48,  56,  64,  80,  96, 112, 128, 160, 192, 224, 256, 320, 'bad' ] ],
+		[ lambda { |v,l| [0,2].include?(v) and [ 3 ].include?(l) }, [ 'free', 32, 48, 56,  64,  80,  96, 112, 128, 144, 160, 176, 192, 224, 256, 'bad' ] ],
+		[ lambda { |v,l| [0,2].include?(v) and [1,2].include?(l) }, [ 'free',  8, 16, 24,  32,  40,  48,  56,  64,  80,  96, 112, 128, 144, 160, 'bad' ] ]
+	]
+
+	SAMPLERATE = [
+		[ 11025, 12000,  8000, 'reserved' ], # MPEG 2.5
+		[ 'bad', 'bad', 'bad', 'reserved' ], # reserved
+		[ 22050, 24000, 16000, 'reserved' ], # MPEG 2
+		[ 44100, 48000, 32000, 'reserved' ], # MPEG 1
+	]
+
+	PADDING = [ 'no', 'yes' ]
+	PRIVACY = [ 'no', 'yes' ]
+	MODE = [ 'stereo', 'joint stereo', 'dual mono', 'single mono' ]
+	COPYRIGHT = [ 'no', 'yes' ]
+	ORIGINAL = [ 'no', 'yes' ]
+	EMPHASIS =  [ 'none', '50/15ms', 'reserved', 'CCIT J.17' ]
+	FRAMESIZE = [ 'bad', 1152, 1152, 384 ]
+
+	OPTION_BITS = [ [0,11],[11,2],[13,2],[15,1],[16,4],[20,2],[22,1],[23,1],[24,2],[26,2],[28,1],[29,1],[30,2] ]
+	FRAME_HEADER_SZ = 4
+	FRAME_CRC16_SZ = 2
+
+	attr_accessor :protocol
+	attr_accessor :host
+	attr_accessor :port
+	attr_accessor :path
+	attr_accessor :url
+	attr_accessor :socket
+	attr_accessor :options
+	attr_accessor :frames
+	attr_accessor :datastream
+	attr_accessor :response
+
+	def get_bitrate(v,l,br)
+
+		BITRATE.each { |f,brs| return brs[br] if f.call(v,l) }
+
+		return nil
+	end
+
+	def get_frame_size(l,br,sr,padding)
+
+		return 'bad' unless br.is_a?(Numeric) and sr.is_a?(Numeric) and padding.is_a?(Numeric)
+
+		if [1,2].include?(l)
+			return ((144 * br * 1000 / sr) + padding).floor
+		elsif [3].include?(l)
+			return (((12 * br * 1000 / sr) + padding) * 4).floor
+		else
+			return 'bad'
+		end
+	end
+
+	def initialize
+		@options = []
+		@frames = []
+		@datastream = ''
+	end
+
+	def get_frame_header_fields(data32)
+
+		frame_header = sprintf("%b", data32.unpack('N').first)
+
+		return OPTION_BITS.map do |range|
+			Integer ('0b' + frame_header[*range])
+		end
+	end
+
+	def get_frame_header_offset(data)
+
+		skip = 0
+
+		until (data[skip + 0].ord == 0xff) and (data[skip + 1].ord >= 0xf0) and (data[skip + 1].ord <= 0xff)
+			skip += 1
+			return nil if skip + FRAME_HEADER_SZ == data.length
+		end
+
+		return skip
+	end
+
+	def frame_header_valid?(frame_header)
+		return false if ( not frame_header.values.grep(/^(reserved|bad)$/).empty? )
+		return false if frame_header['layer'] != 'Layer III'
+		return true
+	end
+
+	def has_frame?(data)
+		return ( not get_frame_header_offset(data).nil? )
+	end
+
+	def get_frames(data)
+
+		frames = []
+
+		while has_frame?(data)
+			frame,data = get_frame(data)
+			break if frame.nil?
+			frames << frame
+		end
+
+		return [ frames, data ]
+	end
+
+	def get_frame_header(frame_header_bytes)
+
+		sync,version,layer,crc16off,br,sr,padding,privacy,mode,me,copyright,original,emphasis = get_frame_header_fields(frame_header_bytes)
+
+		bitrate = get_bitrate(version,layer,br)
+
+		return {
+			'version'      => VERSION[version],
+			'layer'        => LAYER[layer],
+			'crc-16'       => CRC16[crc16off],
+			'bit-rate'     => bitrate,															# bit rate in Kb/s
+			'sample-rate'  => SAMPLERATE[version][sr],											# sample rate in hz
+			'padding'      => PADDING[padding],
+			'privacy'      => PRIVACY[privacy],
+			'mode'         => MODE[mode],
+			'copyright'    => COPYRIGHT[copyright],
+			'original'     => ORIGINAL[original],
+			'emphasis'     => EMPHASIS[emphasis],
+			'frame-size'   => FRAMESIZE[layer],													# frame size in samples
+			'frame-length' => get_frame_size(layer, bitrate, SAMPLERATE[version][sr], padding), # includes header and possible crc
+		}
+	end
+
+	def get_frame(data)
+
+		postponed = [ nil, data.dup ]
+
+		return postponed if data.size < FRAME_HEADER_SZ
+
+		skipped_data = ''
+
+		while true do
+
+			skip = get_frame_header_offset(data)
+
+			return postponed if skip.nil?
+
+			skipped_data << data.slice!(0,skip)
+
+			frame_header_bytes = data[0,FRAME_HEADER_SZ]
+
+			frame_header = get_frame_header(frame_header_bytes)
+
+			if frame_header_valid? frame_header
+				# remove the frame header and now data just contains the tail data which is already saved in frame_header_bytes
+				data.slice!(0,FRAME_HEADER_SZ)
+				break
+			else
+				# add one byte of the invalid frame header to the pre data so that it gets skipped next iteration
+				skipped_data << data.slice!(0,1)
+			end
+		end
+
+		frame_header['skip-length'] = skipped_data.length
+
+		if skipped_data.length > 0
+			skipped_data.logdump(:skipped_data)
+		end
+
+		crc = nil
+
+		if frame_header['crc-16'] == 'yes'
+			# if the crc16 is not off then pull it from the tail data
+			# put the data back and wait until later if theres not enough data
+			return postponed if data.size < 2
+			crc = data.slice!(0,FRAME_CRC16_SZ).unpack('n')
+			frame_header['crc-16-value'] = crc
+		end
+
+		# make sure theres enough stream data to grab the frame data
+
+		if data.length < frame_header['frame-length']
+			puts "GOT #{data.length} BUT EXPECTED #{frame_header['frame-length']}"
+			return postponed
+		end
+
+		# save the frame samples data minus the header and possible crc
+
+		frame_header['data'] = data.slice!(0,frame_header['frame-length'] - FRAME_HEADER_SZ - (crc.nil? ? 0 : FRAME_CRC16_SZ))
+
+		return [ frame_header, data ]
+	end
+
+	def next_stream_block(data)
+
+		delta = data
+		raise 'could not read data stream' if delta.nil?
+		@datastream << delta
+
+		delta[0,128].logdump(:delta)
+
+		frames, @datastream = get_frames @datastream
+
+		puts "THERE IS #{@datastream.size} bytes buffered up for more (#{@datastream.hexdump()})"
+
+		@frames += frames
+
+		return true
+	end
+end
+
+$config = ZConfig.new
+
+$config.next_stream_block(f)
+
+print "frame count is #{$config.frames.size}\n"
+
+$config.frames.each do |f|
+
+	line = sprintf("%s %s %3dKb/s %5dhz %s %s samples %d skipped %d data.size %d expected size %d (-4) = %d crc-16 %s padding %s",
+		f['version'], f['layer'], f['bit-rate'], f['sample-rate'], f['mode'], f['emphasis'], f['frame-size'], f['skip-length'], f['data'].size, f['frame-length'], f['frame-length'] - 4, f['crc-16'], f['padding'])
+
+		puts line
+
+end
+
+$config.frames.clear
+
