@@ -334,18 +334,19 @@ class ZConfig
 		bitrate = get_bitrate(version,layer,br)
 
 		return {
+			'sync'         => sync,
 			'version'      => VERSION[version],
 			'layer'        => LAYER[layer],
 			'crc-16'       => CRC16[crc16off],
 			'bit-rate'     => bitrate,															# bit rate in Kb/s
-			'sample-rate'  => SAMPLERATE[version][sr],											# sample rate in hz
+			'sample-rate'  => SAMPLERATE[version][sr],									# sample rate in hz
 			'padding'      => PADDING[padding],
 			'privacy'      => PRIVACY[privacy],
 			'mode'         => MODE[mode],
 			'copyright'    => COPYRIGHT[copyright],
 			'original'     => ORIGINAL[original],
 			'emphasis'     => EMPHASIS[emphasis],
-			'frame-size'   => FRAMESIZE[layer],													# frame size in samples
+			'frame-size'   => FRAMESIZE[layer],												# frame size in samples
 			'frame-length' => get_frame_size(layer, bitrate, SAMPLERATE[version][sr], padding), # includes header and possible crc
 		}
 	end
@@ -529,8 +530,21 @@ $config.each_stream_block do
 
 	$config.frames.each do |f|
 
-		line = sprintf("%s %s %3dKb/s %5dhz %s %s samples %d skipped %d data.size %d expected size %d (-4) = %d crc-16 %s padding %s",
-			f['version'], f['layer'], f['bit-rate'], f['sample-rate'], f['mode'], f['emphasis'], f['frame-size'], f['skip-length'], f['data'].size, f['frame-length'], f['frame-length'] - 4, f['crc-16'], f['padding'])
+		line = sprintf("@%x %s %s %3dKb/s %5dhz %s %s samples %d skipped %d data.size %d expected size %d (-4) = %d crc-16 %s padding %s",
+			f['sync'],
+			f['version'],
+			f['layer'],
+			f['bit-rate'],
+			f['sample-rate'],
+			f['mode'],
+			f['emphasis'],
+			f['frame-size'],			# number of samples
+			f['skip-length'],			# bytes skipped before frame header
+			f['data'].size,			# actual data size
+			f['frame-length'],		# expected size
+			f['frame-length'] - 4,	# expected size - 4 (actual expected size)
+			f['crc-16'],				# crc exists?
+			f['padding'])				# padding byte (or dword)
 
 		if line == pline
 			tally += 1
