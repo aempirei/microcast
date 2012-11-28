@@ -21,18 +21,17 @@
 typedef struct timeval timeval_t;
 
 typedef struct configuration {
-    int32_t rate;
+    int64_t rate;
     int input_buffering;
     int verbose;
     timeval_t started;
     timeval_t elapsed;
-    int32_t bytes;
 } configuration_t;
 
 typedef struct state {
     timeval_t started;
     timeval_t elapsed;
-    int32_t bytes;
+    int64_t bytes;
     char *buffer;
     size_t buffer_sz;
 } state_t;
@@ -46,8 +45,7 @@ const state_t initial_state = {
 const configuration_t default_config = {
     .rate = 5,
     .input_buffering = 1,
-    .verbose = 0,
-    .bytes = 0
+    .verbose = 0
 };
 
 const char *default_action(int default_value) {
@@ -141,6 +139,24 @@ int32_t parse_rate(const char *str) {
     return rate;
 }
 
+void eprintf(int errnum, const char *format, ...) {
+
+    va_list ap;
+    char eb[256];
+    char s[256];
+
+    if (strerror_r(errnum, eb, sizeof(eb)) == -1) {
+        perror("strerror_r()");
+        return;
+    }
+
+    va_start(ap, format);
+    vsnprintf(s, sizeof(s), format, ap);
+    va_end(ap);
+
+    fprintf(stderr, "%s: %s\n", s, eb);
+}
+
 int cliconfig(configuration_t * config, int argc, char **argv) {
 
     int opt;
@@ -194,33 +210,27 @@ void throttle(state_t * state, configuration_t * config, FILE * fpin, FILE * fpo
     int ch;
 
     if (config->verbose)
-        fprintf(stderr, "throttling stdin at %dBps\n", config->rate);
+        fprintf(stderr, "throttling stdin at %lldBps\n", config->rate);
 
     if (config->input_buffering)
         setvbuf(stdin, state->buffer, _IOFBF, state->buffer_sz);
 
-    ch = fgetc(fpin);
-    fputc(ch, fpout);
+    while ((ch = fgetc(fpin)) != EOF) {
 
-    getelapsedtime(&(config->elapsed), &(config->started));
-}
+        getelapsedtime(&(config->elapsed), &(config->started));
 
-void eprintf(int errnum, const char *format, ...) {
+        int64_t quota = (config->rate * config->elapsed.tv_sec) + (config->rate * config->elapsed.tv_usec / 1000000);
+        int64_t delta = quota - state->bytes;
 
-    va_list ap;
-    char eb[256];
-    char s[256];
+        fputc(ch, fpout);
+        state->bytes++;
 
-    if (strerror_r(errnum, eb, sizeof(eb)) == -1) {
-        perror("strerror_r()");
-        return;
+        if (ch == '\n' && config->verbose)
+            fprintf(stderr, "quota %lld actual %lld delta %lld estimate %.2fs\n", quota, state->bytes, delta, (double)delta / config->rate);
     }
 
-    va_start(ap, format);
-    vsnprintf(s, sizeof(s), format, ap);
-    va_end(ap);
-
-    fprintf(stderr, "%s: %s\n", s, eb);
+    if (!feof(fpin))
+        eprintf(errno, "fgetc()");
 }
 
 int main(int argc, char **argv) {
@@ -239,6 +249,8 @@ int main(int argc, char **argv) {
         state.buffer = malloc(state.buffer_sz);
 
     gettimeofday(&config.started, NULL);
+
+    setvbuf(stdout, NULL, _IONBF, 0);
 
     if (files_index == argc) {
 
