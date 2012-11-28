@@ -117,7 +117,7 @@ int32_t parse_rate(const char *str) {
 
     free(token);
 
-    return default_config.rate;
+	 return rate;
 }
 
 int cliconfig(configuration_t * config, int argc, char **argv) {
