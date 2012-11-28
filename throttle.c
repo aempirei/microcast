@@ -17,8 +17,12 @@
 #include <math.h>
 #include <stdarg.h>
 #include <sys/time.h>
+#include <time.h>
+
+#define MIN(a,b) ((a)<(b)?(a):(b))
 
 typedef struct timeval timeval_t;
+typedef struct timespec timespec_t;
 
 typedef struct configuration {
     int64_t rate;
@@ -39,7 +43,7 @@ typedef struct state {
 const state_t initial_state = {
     .bytes = 0,
     .buffer = NULL,
-    .buffer_sz = BUFSIZ * 16
+    .buffer_sz = BUFSIZ
 };
 
 const configuration_t default_config = {
@@ -207,7 +211,11 @@ void getelapsedtime(timeval_t * elapsed, timeval_t * started) {
 
 void throttle(state_t * state, configuration_t * config, FILE * fpin, FILE * fpout) {
 
+    char line[BUFSIZ * 4];
+
     int ch;
+    size_t n;
+    size_t m;
 
     if (config->verbose)
         fprintf(stderr, "throttling stdin at %lldBps\n", config->rate);
@@ -217,16 +225,46 @@ void throttle(state_t * state, configuration_t * config, FILE * fpin, FILE * fpo
 
     while ((ch = fgetc(fpin)) != EOF) {
 
-        getelapsedtime(&(config->elapsed), &(config->started));
-
-        int64_t quota = (config->rate * config->elapsed.tv_sec) + (config->rate * config->elapsed.tv_usec / 1000000);
-        int64_t delta = quota - state->bytes;
-
         fputc(ch, fpout);
         state->bytes++;
 
-        if (ch == '\n' && config->verbose)
-            fprintf(stderr, "quota %lld actual %lld delta %lld estimate %.2fs\n", quota, state->bytes, delta, (double)delta / config->rate);
+        getelapsedtime(&(config->elapsed), &(config->started));
+
+        int64_t quota = (config->rate * config->elapsed.tv_sec) + (config->rate * config->elapsed.tv_usec / 1000000);
+        int64_t delta = state->bytes - quota;
+
+        if (delta > 0) {
+            int64_t secs = delta / config->rate;
+            int64_t mod_bytes = delta - secs * config->rate;
+            timespec_t ts;
+
+            ts.tv_sec = secs;
+            ts.tv_nsec = mod_bytes * 1000000000 / config->rate;
+
+            nanosleep(&ts, NULL);
+
+        } else if (delta < 0) {
+
+            m = MIN((ssize_t) sizeof(line), abs(delta));
+
+            if ((n = fread(line, 1, m, fpin)) != m) {
+                if (!feof(fpin)) {
+                    eprintf(errno, "fread(line,1,%d,fpin)", m);
+                    break;
+                }
+            }
+
+            if (fwrite(line, 1, n, fpout) != n) {
+                eprintf(errno, "fwrite(line,1,%d,fpout)", n);
+                break;
+            }
+
+            state->bytes += n;
+        }
+
+        /*
+         * TODO: add verbose timing logs on a 3 second timer
+         */
     }
 
     if (!feof(fpin))
@@ -269,6 +307,9 @@ int main(int argc, char **argv) {
         }
 
     }
+
+    free(state.buffer);
+    state.buffer = NULL;
 
     exit(EXIT_SUCCESS);
 }
