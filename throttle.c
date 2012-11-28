@@ -16,17 +16,38 @@
 #include <ctype.h>
 #include <math.h>
 #include <stdarg.h>
+#include <sys/time.h>
+
+typedef struct timeval timeval_t;
 
 typedef struct configuration {
     int32_t rate;
     int input_buffering;
     int verbose;
+    timeval_t started;
+    timeval_t elapsed;
+    int32_t bytes;
 } configuration_t;
 
+typedef struct state {
+    timeval_t started;
+    timeval_t elapsed;
+    int32_t bytes;
+    char *buffer;
+    size_t buffer_sz;
+} state_t;
+
+const state_t initial_state = {
+    .bytes = 0,
+    .buffer = NULL,
+    .buffer_sz = BUFSIZ * 16
+};
+
 const configuration_t default_config = {
-    .rate = 4,
+    .rate = 5,
     .input_buffering = 1,
-    .verbose = 0
+    .verbose = 0,
+    .bytes = 0
 };
 
 const char *default_action(int default_value) {
@@ -117,14 +138,12 @@ int32_t parse_rate(const char *str) {
 
     free(token);
 
-	 return rate;
+    return rate;
 }
 
 int cliconfig(configuration_t * config, int argc, char **argv) {
 
     int opt;
-
-    *config = default_config;
 
     opterr = 0;
 
@@ -161,16 +180,29 @@ int cliconfig(configuration_t * config, int argc, char **argv) {
     return optind;
 }
 
-void throttle(configuration_t * config, FILE * fpin, FILE * fpout) {
+void getelapsedtime(timeval_t * elapsed, timeval_t * started) {
+
+    timeval_t current;
+
+    gettimeofday(&current, NULL);
+
+    timersub(&current, started, elapsed);
+}
+
+void throttle(state_t * state, configuration_t * config, FILE * fpin, FILE * fpout) {
 
     int ch;
 
-    if (config->verbose) {
-        fprintf(stderr, "throttle woo: %dBps\n", config->rate);
-    }
+    if (config->verbose)
+        fprintf(stderr, "throttling stdin at %dBps\n", config->rate);
+
+    if (config->input_buffering)
+        setvbuf(stdin, state->buffer, _IOFBF, state->buffer_sz);
 
     ch = fgetc(fpin);
     fputc(ch, fpout);
+
+    getelapsedtime(&(config->elapsed), &(config->started));
 }
 
 void eprintf(int errnum, const char *format, ...) {
@@ -194,25 +226,36 @@ void eprintf(int errnum, const char *format, ...) {
 int main(int argc, char **argv) {
 
     const char fopen_mode[] = "r";
-    configuration_t config;
+
+    configuration_t config = default_config;
+    state_t state = initial_state;
+
     FILE *fp;
-    int files_index = cliconfig(&config, argc, argv);
+    int files_index;
+
+    files_index = cliconfig(&config, argc, argv);
+
+    if (config.input_buffering)
+        state.buffer = malloc(state.buffer_sz);
+
+    gettimeofday(&config.started, NULL);
 
     if (files_index == argc) {
-        if (config.verbose)
-            fprintf(stderr, "throttling stdin\n");
-        throttle(&config, stdin, stdout);
+
+        throttle(&state, &config, stdin, stdout);
+
     } else {
+
         for (int i = files_index; i < argc; i++) {
+
             if ((fp = fopen(argv[i], fopen_mode)) == NULL) {
                 eprintf(errno, "fopen(\"%s\",\"%s\")", argv[i], fopen_mode);
             } else {
-                if (config.verbose)
-                    fprintf(stderr, "throttling file %s\n", argv[i]);
-                throttle(&config, fp, stdout);
+                throttle(&state, &config, fp, stdout);
                 fclose(fp);
             }
         }
+
     }
 
     exit(EXIT_SUCCESS);
